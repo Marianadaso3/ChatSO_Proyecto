@@ -22,7 +22,7 @@
 #define BUFFER_SIZE 1024
 
 char* estado(int valor) {
-    char* cadena = malloc(sizeof(char) * 40); // Reservamos memoria para la cadena
+    char* cadena = malloc(sizeof(char) * 40);
     switch (valor) {
         case 1:
             strcpy(cadena, "ACTIVO");
@@ -44,17 +44,8 @@ void handle_sigint(int sig) {
   printf("Programa interrumpido con ^C\n");
   exit(1); // Salir del programa con un código de error
 }
-void print_menu() {
-    printf("\nMenu:\n");
-    printf("1. Chatear con otros (general)\n");
-    printf("2. Mensaje privado\n");
-    printf("3. Cambiar status\n");
-    printf("4. Mostrar todos los usuarios conectados\n");
-    printf("5. Desplegar informacion particular de un usuario\n");
-    printf("6. Ayuda\n");
-    printf("7. Salir\n");
-    printf("Enter your choice:"); 
-}
+
+
 void* client_listening(void *arg) {
     int client_socket = *(int*)arg;
 
@@ -267,24 +258,10 @@ int main(int argc, char **argv) {
     }
 
     free(buffer_registration);
-
-    // Serializando registro
-    // size_t serialized_size = chat_sist_os__new_user__get_packed_size(&registration);
-    // uint8_t *buffer = malloc(serialized_size);
-    // chat_sist_os__new_user__pack(&registration, buffer);
-
-    // // Enviar registro
-    // if (send(client_socket, buffer, serialized_size, 0) < 0) {
-    //     perror("Error al enviar el mensaje");
-    //     exit(1);
-    // }
-    // free(buffer);
     free(ip);
     printf(" >> Registro enviado");
 
     /*Respuesta del servidor*/
-    
-    // Recibir un buffer del socket
     uint8_t recv_buffer[BUFFER_SIZE];
     ssize_t recv_size = recv(client_socket, recv_buffer, sizeof(recv_buffer), 0);
     if (recv_size < 0) {
@@ -320,16 +297,6 @@ int main(int argc, char **argv) {
         printf("\n\n");
     }
     
-
-    // printf("\n\n ---- Respuesta de registro ----\n");
-    // printf(" >> TIPO DE MENSAJE: %d\n",     response->message_private);
-    // printf(" >> SENDER: %s\n",              response->message_sender);
-    // printf(" >> DESTINATION: %s\n",         response->message_destination);
-    // printf(" >> CONTENT: %s\n\n",             response->message_content);
-    
-    // printf("\n\n [%s] --> [%s]: '%s' \n\n", response->message_sender, response->message_destination, response->message_content);
-
-    // Liberar los buffers y el mensaje
     chat_sist_os__answer__free_unpacked(response, NULL);
 
 
@@ -340,7 +307,15 @@ int main(int argc, char **argv) {
     }
 
     while(choice != 7) {
-        print_menu();
+        printf("\n CHAT UVG:\n");
+        printf("1. Ingresar a chat publico\n");
+        printf("2. Enviar mensaje privado\n");
+        printf("3. Cambiar status\n");
+        printf("4. Mostrar todos los usuarios conectados\n");
+        printf("5. Desplegar informacion particular de un usuario\n");
+        printf("6. Ayuda\n");
+        printf("7. Salir\n");
+        printf("Enter your choice:"); 
         scanf("%d", &choice);
 
         switch (choice) {
@@ -556,28 +531,6 @@ int main(int argc, char **argv) {
                 
                 break;
             case 6:
-                {
-                // Help
-                ChatSistOS__UserOption ayuda    = CHAT_SIST_OS__USER_OPTION__INIT;
-                ayuda.op                  = choice;
-
-                // Serializando registro
-                size_t serialized_size_ayuda = chat_sist_os__user_option__get_packed_size(&ayuda);
-                uint8_t *buffer_ayuda = malloc(serialized_size_ayuda);
-                chat_sist_os__user_option__pack(&ayuda, buffer_ayuda);
-                
-                // Enviar registro
-                if (send(client_socket, buffer_ayuda, serialized_size_ayuda, 0) < 0) {
-                    perror("Error al enviar el mensaje");
-                    exit(1);
-                }
-                free(buffer_ayuda);
-
-                
-                    print_ayuda();
-                }
-                break;
-            case 7:
                 // Exit
                 printf("\n\n");
                 ChatSistOS__UserOption finalizar    = CHAT_SIST_OS__USER_OPTION__INIT;

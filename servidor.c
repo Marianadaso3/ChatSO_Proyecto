@@ -9,10 +9,14 @@
 #include <pthread.h>
 #include "chat.pb-c.h"
 
-//Definiciones globales
-#define BACKLOG 10
-#define BUFFER_SIZE 1024
+// Definiciones globales
+enum
+{
+    BACKLOG = 10,
+    BUFFER_SIZE = 1024
+};
 
+// Estructura de usuario
 typedef struct
 {
     char username[100];
@@ -22,83 +26,99 @@ typedef struct
     time_t last_active;
 } User;
 
-//Lista de usuarios conectados
-#define MAX_USERS 50
-User userList[MAX_USERS];
-int numUsers = 0;
-
-//Devuelve si un usuario existe
-int userExists(char *username)
+// Capacidad máxima de usuarios conectados
+enum
 {
-    int i;
-    for (i = 0; i < numUsers; i++)
+    MAX_USERS = 40
+};
+// Arreglo de usuarios conectados
+User connectedUsers[MAX_USERS];
+// Contador de usuarios conectados
+int userCount = 0;
+
+// Comprueba si un usuario está conectado
+int isUserConnected(const char *username)
+{
+    for (int i = 0; i < connectedUserCount; i++)
     {
-        if (strcmp(userList[i].username, username) == 0)
+        if (strcmp(connectedUsers[i].username, username) == 0)
         {
-            return 1; // El usuario ya existe en la lista
+            return 1; // El usuario ya está conectado
         }
     }
-    return 0; // El usuario no existe en la lista
+    return 0; // El usuario no está conectado
 }
 
-// Agrega un usuario a la lista
-void addUser(char *username, char *ip, int socketFD, int status)
+// Agrega un usuario a la lista de usuarios conectados
+void addUserToList(const char *username, const char *ipAddress, int socketFileDescriptor, int userStatus)
 {
-    if (numUsers >= MAX_USERS)
+    if (connectedUserCount < MAX_USERS)
+    {
+        // Se crea un nuevo usuario y se incrementa el contador de usuarios conectados
+        User *newUser = &connectedUsers[connectedUserCount++];
+        // Se copian el nombre de usuario y dirección IP al nuevo usuario
+        strncpy(newUser->username, username, sizeof(newUser->username) - 1);
+        newUser->username[sizeof(newUser->username) - 1] = '\0';
+        strncpy(newUser->ipAddress, ipAddress, sizeof(newUser->ipAddress) - 1);
+        newUser->ipAddress[sizeof(newUser->ipAddress) - 1] = '\0';
+        // Se establecen el descriptor de archivo de socket, estado y tiempo de actividad del nuevo usuario
+        newUser->socketFileDescriptor = socketFileDescriptor;
+        newUser->userStatus = userStatus;
+        newUser->lastActiveTime = time(NULL);
+    }
+    else
     {
         printf("La lista de usuarios está llena. No se puede agregar más usuarios.\n");
-        return;
     }
-    User newUser;
-    strcpy(newUser.username, username);
-    strcpy(newUser.ip, ip);
-    newUser.socketFD = socketFD;
-    newUser.status = status;
-    newUser.last_active = time(NULL);
-    userList[numUsers] = newUser;
-    numUsers++;
 }
 
-// Elimina un usuario de la lista
-void removeUser(char *username, char *ip, int socketFD, int status)
+// Elimina un usuario de la lista de usuarios conectados
+void deleteUserFromList(const char *username, const char *ipAddress, int socketFileDescriptor)
 {
-    int i, j;
-    for (i = 0; i < numUsers; i++)
+    for (int i = 0; i < connectedUserCount; i++)
     {
-        User user = userList[i];
-        if (strcmp(user.username, username) == 0 && strcmp(user.ip, ip) == 0 && user.socketFD == socketFD)
+        User *user = &connectedUsers[i];
+        if (strcmp(user->username, username) == 0 && strcmp(user->ipAddress, ipAddress) == 0 && user->socketFileDescriptor == socketFileDescriptor)
         {
-            // Encontró el usuario, lo elimina
-            for (j = i; j < numUsers - 1; j++)
+            // Se ha encontrado al usuario, procede a eliminarlo
+            for (int j = i; j < connectedUserCount - 1; j++)
             {
-                userList[j] = userList[j + 1];
+                connectedUsers[j] = connectedUsers[j + 1];
             }
-            numUsers--;
-            printf("Usuario eliminado: %s\n", username);
+            connectedUserCount--;
+            printf("El usuario ha sido eliminado: %s\n", username);
             return;
         }
     }
-    // No encontró al usuario
-    printf("No se encontró al usuario: %s\n", username);
+    // No se ha encontrado al usuario
+    printf("El usuario no ha sido encontrado: %s\n", username);
 }
 
-// revisar si esta activo de lo contraio cambiarlo a inactive
-void* check_inactive_users(void *arg) {
-    while (1) {
-        time_t current_time = time(NULL);
-        printf("________________TIME_______________________\n");
-        for (int i = 0; i < numUsers; i++) {
-            double elapsed_time = difftime(current_time, userList[i].last_active);
-            printf("User: %s, Elapsed Time: %.0f\n", userList[i].username, elapsed_time);
-            if (elapsed_time >= 60) {
-                userList[i].status = 3; // Set the status to 3 if the user is inactive for 30 seconds
+// Actualiza el estado de usuarios inactivos
+void *actualizarEstadoUsuariosInactivos(void *arg)
+{
+    const int umbralInactividad = 60;
+    const int intervaloRevision = 15;
+    while (1)
+    {
+        time_t tiempoActual = time(NULL);
+        printf("___________REVISIÓN DE TIEMPO___________\n");
+
+        for (int i = 0; i < cantidadUsuarios; i++)
+        {
+            double tiempoTranscurrido = difftime(tiempoActual, usuariosConectados[i].ultimo_activo);
+            printf("Usuario: %s, Tiempo transcurrido: %.0f\n", usuariosConectados[i].nombre_usuario, tiempoTranscurrido);
+
+            if (tiempoTranscurrido >= umbralInactividad)
+            {
+                usuariosConectados[i].estado = 3; // Cambiar el estado a 3 si el usuario está inactivo por 60 segundos
             }
         }
-        sleep(15); // Check the userList every 15 seconds (or any other desired interval)
+        sleep(intervaloRevision); // Revisar la lista de usuarios cada 15 segundos (o cualquier otro intervalo deseado)
     }
 }
 
-//Funcion que maneja las respuestas al cliente
+// Funcion que maneja las respuestas al cliente
 void *handle_client(void *arg)
 {
     int client_socket = *(int *)arg;
@@ -132,13 +152,12 @@ void *handle_client(void *arg)
     strcpy(MyInfo.ip, chat_registration->ip);
     MyInfo.socketFD = client_socket;
 
-
     // Answer server
     ChatSistOS__Answer respuesta_servidor_registro = CHAT_SIST_OS__ANSWER__INIT;
-    if (userExists(MyInfo.username) == 0)
+    if (isUserConnected(MyInfo.username) == 0)
     {
         // Agregar usuario conectado a la lista de usuarios
-        addUser(chat_registration->username, chat_registration->ip, client_socket, 1);
+        addUserToList(chat_registration->username, chat_registration->ip, client_socket, 1);
 
         respuesta_servidor_registro.op = 0;
         respuesta_servidor_registro.response_status_code = 400;
@@ -187,7 +206,7 @@ void *handle_client(void *arg)
 
     chat_sist_os__user_option__free_unpacked(usero_registration, NULL);
 
-    //Escuchando useroptions recibidas
+    // Escuchando useroptions recibidas
     printf("\n\n Entrando en el ciclo de opciones de [%s]\n", MyInfo.username);
     while (1)
     {
@@ -227,7 +246,8 @@ void *handle_client(void *arg)
                 if (strcmp(userList[i].username, MyInfo.username) == 0)
                 {
                     // revisar si el usuario esta inactivo en este caso activarlo como activo
-                    if (userList[i].status == 3){
+                    if (userList[i].status == 3)
+                    {
                         userList[i].status = 1;
                     }
                     // Si el usuario se llama Gabriel, omitirlo y continuar con el siguiente
@@ -270,7 +290,8 @@ void *handle_client(void *arg)
                 if (strcmp(userList[i].username, mensaje_recibido_directo->message_destination) == 0)
                 {
                     // revisar si el usuario esta inactivo en este caso activarlo como activo
-                    if (userList[i].status == 3){
+                    if (userList[i].status == 3)
+                    {
                         userList[i].status = 1;
                     }
                     userList[i].last_active = time(NULL);
@@ -331,39 +352,44 @@ void *handle_client(void *arg)
             break;
         case 3:
             // Lógica para manejar la opción 3
-                printf("\n\n");
-                ChatSistOS__Status *estatus_recibido = client_opcion->status;
-                // Recorrer la lista de usuarios
-                for (int i = 0; i < numUsers; i++) {
-                    if (strcmp(userList[i].username, MyInfo.username) == 0) {
-                        // revisar si el usuario esta inactivo en este caso activarlo como activo
-                        if (userList[i].status == 3){
-                            userList[i].status = 1;
-                        }
-                        // Si el usuario se llama Gabriel, cambiar su estado
-                        userList[i].last_active = time(NULL);
-                        userList[i].status = estatus_recibido->user_state;
-
-                        ChatSistOS__Answer respuesta_servidor          = CHAT_SIST_OS__ANSWER__INIT;
-                        respuesta_servidor.op   =   3 ;
-                        respuesta_servidor.response_status_code = 400;
-                        respuesta_servidor.response_message = "\nStatus changed succesfully";
+            printf("\n\n");
+            ChatSistOS__Status *estatus_recibido = client_opcion->status;
+            // Recorrer la lista de usuarios
+            for (int i = 0; i < numUsers; i++)
+            {
+                if (strcmp(userList[i].username, MyInfo.username) == 0)
+                {
+                    // revisar si el usuario esta inactivo en este caso activarlo como activo
+                    if (userList[i].status == 3)
+                    {
+                        userList[i].status = 1;
                     }
+                    // Si el usuario se llama Gabriel, cambiar su estado
+                    userList[i].last_active = time(NULL);
+                    userList[i].status = estatus_recibido->user_state;
+
+                    ChatSistOS__Answer respuesta_servidor = CHAT_SIST_OS__ANSWER__INIT;
+                    respuesta_servidor.op = 3;
+                    respuesta_servidor.response_status_code = 400;
+                    respuesta_servidor.response_message = "\nStatus changed succesfully";
                 }
+            }
             break;
         case 4:
             printf("\n\n");
 
-            //Usuarios online
+            // Usuarios online
             ChatSistOS__UsersOnline usuarios_conectados = CHAT_SIST_OS__USERS_ONLINE__INIT;
             usuarios_conectados.n_users = numUsers;
-            usuarios_conectados.users   = malloc(sizeof(ChatSistOS__User *) * numUsers);
+            usuarios_conectados.users = malloc(sizeof(ChatSistOS__User *) * numUsers);
 
             for (int i = 0; i < numUsers; i++)
             {
-                if (strcmp(userList[i].username, MyInfo.username) == 0) {
+                if (strcmp(userList[i].username, MyInfo.username) == 0)
+                {
                     // revisar si el usuario esta inactivo en este caso activarlo como activo
-                    if (userList[i].status == 3){
+                    if (userList[i].status == 3)
+                    {
                         userList[i].status = 1;
                     }
                     userList[i].last_active = time(NULL);
@@ -399,74 +425,82 @@ void *handle_client(void *arg)
             // Lógica para manejar la opción 4
             break;
         case 5:
+        {
+            printf("\n\n");
+            int user_found = 0;
+            // Usuarios online
+            ChatSistOS__UsersOnline usuarios_conectados = CHAT_SIST_OS__USERS_ONLINE__INIT;
+            usuarios_conectados.n_users = numUsers;
+            usuarios_conectados.users = malloc(sizeof(ChatSistOS__User *) * numUsers);
+
+            for (int i = 0; i < numUsers; i++)
             {
-                printf("\n\n");
-                int user_found = 0;
-                //Usuarios online
-                ChatSistOS__UsersOnline usuarios_conectados = CHAT_SIST_OS__USERS_ONLINE__INIT;
-                usuarios_conectados.n_users = numUsers;
-                usuarios_conectados.users   = malloc(sizeof(ChatSistOS__User *) * numUsers);
-
-                for (int i = 0; i < numUsers; i++)
+                if (strcmp(userList[i].username, MyInfo.username) == 0)
                 {
-                    if (strcmp(userList[i].username, MyInfo.username) == 0) {
-                        // revisar si el usuario esta inactivo en este caso activarlo como activo
-                        if (userList[i].status == 3){
-                            userList[i].status = 1;
-                        }
-                        userList[i].last_active = time(NULL);
+                    // revisar si el usuario esta inactivo en este caso activarlo como activo
+                    if (userList[i].status == 3)
+                    {
+                        userList[i].status = 1;
                     }
-                    ChatSistOS__User *new_user = malloc(sizeof(ChatSistOS__User));
-                    chat_sist_os__user__init(new_user);
-                    ChatSistOS__User *empty = malloc(sizeof(ChatSistOS__User));
-                    chat_sist_os__user__init(empty);
-                    empty->user_name = "Vacio";
-                    new_user->user_name = userList[i].username;
-                    new_user->user_state = userList[i].status;
-                    new_user->user_ip = userList[i].ip;
-                    if(strcmp(userList[i].username, client_opcion->userlist->user_name) == 0){
-                        usuarios_conectados.users[i] = new_user;
-                        user_found = 1;
-                    }else{
-                        usuarios_conectados.users[i] = empty;
-                    }
-                    
+                    userList[i].last_active = time(NULL);
                 }
-
-                // Answer del servidor
-                ChatSistOS__Answer respuesta_servidor = CHAT_SIST_OS__ANSWER__INIT;
-                respuesta_servidor.op = 5;
-                if (user_found == 1)
+                ChatSistOS__User *new_user = malloc(sizeof(ChatSistOS__User));
+                chat_sist_os__user__init(new_user);
+                ChatSistOS__User *empty = malloc(sizeof(ChatSistOS__User));
+                chat_sist_os__user__init(empty);
+                empty->user_name = "Vacio";
+                new_user->user_name = userList[i].username;
+                new_user->user_state = userList[i].status;
+                new_user->user_ip = userList[i].ip;
+                if (strcmp(userList[i].username, client_opcion->userlist->user_name) == 0)
                 {
-                    respuesta_servidor.response_status_code = 400;
-                }else{
-                    respuesta_servidor.response_status_code = 200;
+                    usuarios_conectados.users[i] = new_user;
+                    user_found = 1;
                 }
-                
-
-                respuesta_servidor.response_message = "Lista de usuarios Conectados";
-                respuesta_servidor.users_online = &usuarios_conectados;
-
-                // Serializar la respuesta en un buffer
-                size_t serialized_size_servidor = chat_sist_os__answer__get_packed_size(&respuesta_servidor);
-                uint8_t *buffer_servidor = malloc(serialized_size_servidor);
-                chat_sist_os__answer__pack(&respuesta_servidor, buffer_servidor);
-
-                // Enviar el buffer de respuesta a través del socket
-                if (send(MyInfo.socketFD, buffer_servidor, serialized_size_servidor, 0) < 0)
+                else
                 {
-                    perror("Error al enviar la respuesta");
-                    exit(1);
+                    usuarios_conectados.users[i] = empty;
                 }
-                free(buffer_servidor);
-            break;
             }
+
+            // Answer del servidor
+            ChatSistOS__Answer respuesta_servidor = CHAT_SIST_OS__ANSWER__INIT;
+            respuesta_servidor.op = 5;
+            if (user_found == 1)
+            {
+                respuesta_servidor.response_status_code = 400;
+            }
+            else
+            {
+                respuesta_servidor.response_status_code = 200;
+            }
+
+            respuesta_servidor.response_message = "Lista de usuarios Conectados";
+            respuesta_servidor.users_online = &usuarios_conectados;
+
+            // Serializar la respuesta en un buffer
+            size_t serialized_size_servidor = chat_sist_os__answer__get_packed_size(&respuesta_servidor);
+            uint8_t *buffer_servidor = malloc(serialized_size_servidor);
+            chat_sist_os__answer__pack(&respuesta_servidor, buffer_servidor);
+
+            // Enviar el buffer de respuesta a través del socket
+            if (send(MyInfo.socketFD, buffer_servidor, serialized_size_servidor, 0) < 0)
+            {
+                perror("Error al enviar la respuesta");
+                exit(1);
+            }
+            free(buffer_servidor);
+            break;
+        }
         case 6:
             // Lógica para manejar la opción 6
-            for (int i = 0; i < numUsers; i++){
-                if (strcmp(userList[i].username, MyInfo.username) == 0) {
+            for (int i = 0; i < numUsers; i++)
+            {
+                if (strcmp(userList[i].username, MyInfo.username) == 0)
+                {
                     // revisar si el usuario esta inactivo en este caso activarlo como activo
-                    if (userList[i].status == 3){
+                    if (userList[i].status == 3)
+                    {
                         userList[i].status = 1;
                     }
                     userList[i].last_active = time(NULL);
@@ -484,8 +518,8 @@ void *handle_client(void *arg)
         // Libera el desempaquetamiento
         chat_sist_os__user_option__free_unpacked(client_opcion, NULL);
     }
-    salir_del_ciclo:
-    removeUser(MyInfo.username, MyInfo.ip, MyInfo.socketFD, MyInfo.status);
+salir_del_ciclo:
+    deleteUserFromList(MyInfo.username, MyInfo.ip, MyInfo.socketFD, MyInfo.status);
 
     printf("\n\n ---- Usuarios dentro del chat ----\n");
 
@@ -577,7 +611,8 @@ int main(int argc, char **argv)
         }
         // Crear un hilo para llevar el control de tiempo de los clientes
         pthread_t inactive_users_thread;
-        if (pthread_create(&inactive_users_thread, NULL, check_inactive_users, NULL)) {
+        if (pthread_create(&inactive_users_thread, NULL, actualizarEstadoUsuariosInactivos, NULL))
+        {
             perror("Error al crear el hilo del tiempo");
             exit(1);
         }
